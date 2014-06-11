@@ -1,0 +1,20 @@
+
+module cloudinit 1.0;
+
+require {
+	type systemd_logind_t;
+	type httpd_t;
+	type certmonger_t;
+	type cloud_init_t;
+	class dbus send_msg;
+	class key { read write view };
+}
+
+#============= certmonger_t ==============
+allow certmonger_t cloud_init_t:dbus send_msg;
+
+#============= httpd_t ==============
+allow httpd_t cloud_init_t:key { read write view };
+
+#============= systemd_logind_t ==============
+allow systemd_logind_t cloud_init_t:dbus send_msg;
