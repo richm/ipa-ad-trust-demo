@@ -1,6 +1,9 @@
 #!/bin/bash
 
 set -o errexit
+if [ -n "$VM_DEBUG" ] ; then
+    set -x
+fi
 
 # first file is the global (i.e. not server specific) config
 
@@ -8,11 +11,22 @@ globalconf=$1
 . $globalconf
 shift
 
+# ipa needs the ad conf files for cross domain trust setup
+AD_CONF_FILES=""
+IPA_CONF_FILES=""
+for cf in "$@" ; do
+    case "$cf" in
+    ad*.conf) AD_CONF_FILES="$AD_CONF_FILES $cf" ;;
+    ipa*.conf) IPA_CONF_FILES="$IPA_CONF_FILES $cf" ;;
+    *) echo Unknown config file $cf - does not match 'ipa*.conf' or 'ad*.conf' ; exit 1 ;;
+    esac
+done
+
 install_packages() {
     # unrar is from rpmfusion
     # sudo yum localinstall -y http://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-stable.noarch.rpm
     # unar is in f20
-    PKGS_REQ=${PKGS_REQ:-"unrar unar qemu-img qemu-kvm libvirt virt-manager libguestfs-tools"}
+    PKGS_REQ=${PKGS_REQ:-"unar qemu-img qemu-kvm libvirt virt-manager libguestfs-tools"}
     PKGS_TO_INSTALL=${PKGS_TO_INSTALL:-""}
 
     for pkg in $PKGS_REQ ; do
@@ -25,6 +39,12 @@ install_packages() {
     if [ -n "$PKGS_TO_INSTALL" ] ; then
         $SUDOCMD yum -y install $PKGS_TO_INSTALL
     fi
+    if rpm -q unar ; then
+        echo using unar
+    else
+        $SUDOCMD yum -y install unrar
+    fi
+
 }
 
 get_windows_image() {
@@ -47,10 +67,24 @@ get_windows_image() {
     fi
 
     cd "$WIN_DL_IMG_DIR/$WIN_IMG_NAME/$WIN_IMG_NAME/Virtual Hard Disks"
-    if ! $SUDOCMD test -f $WIN_VM_DISKFILE_BACKING ; then
-        $SUDOCMD qemu-img convert -p -f vpc -O qcow2 $WIN_IMG_NAME.vhd $WIN_VM_DISKFILE_BACKING
+    destfile=${WIN_VM_DISKFILE_BACKING:-$VM_IMG_DIR/$WIN_IMG_NAME.qcow2}
+    if ! $SUDOCMD test -f $destfile ; then
+        $SUDOCMD qemu-img convert -p -f vpc -O qcow2 $WIN_IMG_NAME.vhd $destfile
     fi
     popd
+    # NOTE: On F20, when using a backing file + image, it seems that virt-win-reg somehow
+    # corrupts the registry, which is used by other virt tools such as virt-cat and virt-ls,
+    # which are used to test for setup/install completion - in this case, we can't use the
+    # backing file, we just make a copy of it so we can write to it
+    # we keep a copy of it for testing, so we can create other vms from the same source
+    for cf in $AD_CONF_FILES ; do (
+        . $cf
+        if [ -z "$WIN_VM_DISKFILE_BACKING" -a -n "$WIN_VM_DISKFILE" ] ; then
+            if ! $SUDOCMD test -f $WIN_VM_DISKFILE ; then
+                $SUDOCMD cp $destfile $WIN_VM_DISKFILE
+            fi
+        fi
+    ) done
 }
 
 gen_virt_mac() {
@@ -61,12 +95,12 @@ gen_virt_mac() {
 
 # $1 - network name - also used for bridge name
 # $2 - domain name
-# $3 - 3 element IP prefix e.g. 192.168.100
+# $3 - 3 element IP prefix e.g. 192.168.129
 # $4 - hostname (not fqdn)
 # $5 - MAC address
 # this will define a new domain in dns with a new network
 # The virt host will have the IP address xxx.xxx.xxx.1
-# e.g. 192.168.100.1
+# e.g. 192.168.129.2
 # The given host will be added to the DNS with the IP address
 # xxx.xxx.xxx.2 e.g. 192.168.100.2
 # the network name should be a short, descriptive name, not
@@ -77,7 +111,7 @@ gen_virt_mac() {
 # argument of virt-install
 create_virt_network2() {
     if $SUDOCMD virsh net-info $1 > /dev/null 2>&1 ; then
-        echo virtual network $1 already exists - undefining
+        echo virtual network $1 already exists
         $SUDOCMD virsh net-destroy $1
         $SUDOCMD virsh net-undefine $1
     fi
@@ -171,12 +205,19 @@ create_virt_network() {
     # create virtual networks before creating hosts
     # each host is in two sections - the ip/dhcp section and the dns section
     VM_NETWORK_NAME=${VM_NETWORK_NAME:-ipaadtest}
-    VM_NETWORK_IP=${VM_NETWORK_IP:-192.168.0.1}
-    VM_NETWORK_RANGE=${VM_NETWORK_RANGE:-"start='192.168.0.128' end='192.168.1.254'"}
+    VM_NETWORK_IP=${VM_NETWORK_IP:-192.168.128.1}
+    VM_NETWORK_MASK=${VM_NETWORK_MASK:-255.255.224.0}
+    VM_NETWORK_RANGE=${VM_NETWORK_RANGE:-"start='192.168.128.2' end='192.168.128.254'"}
     if $SUDOCMD virsh net-info $VM_NETWORK_NAME > /dev/null 2>&1 ; then
-        echo virtual network $VM_NETWORK_NAME already exists - undefining
-        $SUDOCMD virsh net-destroy $VM_NETWORK_NAME || echo network not running
-        $SUDOCMD virsh net-undefine $VM_NETWORK_NAME || echo network not defined
+        echo virtual network $VM_NETWORK_NAME already exists
+        echo if you want to recreate it, run the following commands
+        echo $SUDOCMD virsh net-destroy $VM_NETWORK_NAME
+        echo $SUDOCMD virsh net-undefine $VM_NETWORK_NAME
+        echo then run $0 again
+        echo if you need to add VMs to the network, use $SUDOCMD virsh net-edit $VM_NETWORK_NAME
+        echo "and add the <ip><dhcp><host> information, and the <dns><host> information"
+        $SUDOCMD virsh net-start $VM_NETWORK_NAME || echo $VM_NETWORK_NAME is running
+        return 0
     fi
     netxml=`mktemp`
     cat > $netxml <<EOF
@@ -214,16 +255,47 @@ EOF
 
 install_packages || echo error installing packages
 
+get_windows_image
+
 create_virt_network "$@"
 
-for cf in "$@" ; do
-    # first, do ipa
-    case `basename $cf` in ipa*) ;; *) continue ;; esac
-    setupvm.sh $globalconf $cf
+# Each AD needs the dns zone name and IP addr of each IPA server
+# gather this information into a setup script
+ss4dir=`mktemp -d`
+trap "rm -rf $ss4dir" EXIT SIGINT SIGTERM
+ss4=$ss4dir/setupscript4.cmd.in
+cat > $ss4 <<EOF
+echo Add IPA zone to windows DNS
+EOF
+
+for cf in $IPA_CONF_FILES ; do
+    ( . $cf
+    if [ -z "$VM_IP" ] ; then
+        VM_IP=`$SUDOCMD virsh net-dumpxml $VM_NETWORK_NAME | grep "'"$VM_NAME"'"|sed "s/^.*ip='\([^']*\)'.*$/\1/"`
+    fi
+    cat >> $ss4 <<EOF
+dnscmd 127.0.0.1 /ZoneAdd $VM_DOMAIN /Forwarder $VM_IP
+EOF
+    )
 done
 
-for cf in "$@" ; do
-    # next, do ad
-    case `basename $cf` in ad*) ;; *) continue ;; esac
-    make-ad-vm.sh $globalconf $cf
+cat >> $ss4 <<EOF
+@SETUP_PATH@\nextscript.cmd 5
+EOF
+
+# set up AD first - This is required for ipa trust-add to work
+for cf in $AD_CONF_FILES ; do
+    make-ad-vm.sh $globalconf $cf $ss4
+done
+
+# next, set up IPAs - give each IPA the AD conf files with
+# admin name and password, domains, etc.
+adconf=`mktemp`.conf
+trap "rm -rf $ss4dir $adconf" EXIT SIGINT SIGTERM
+cat > $adconf <<EOF
+VM_EXTRA_FILES="\$VM_EXTRA_FILES $AD_CONF_FILES"
+EOF
+
+for cf in $IPA_CONF_FILES ; do
+    setupvm.sh $globalconf $cf $adconf
 done
