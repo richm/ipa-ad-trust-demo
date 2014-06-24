@@ -1,0 +1,89 @@
+--- keystone.conf.orig	2014-06-19 21:32:38.320999945 -0400
++++ keystone.conf	2014-06-20 19:37:11.070000101 -0400
+@@ -152,17 +152,17 @@
+ # connection = mysql://keystone:keystone@localhost/keystone
+ connection = mysql://keystone_admin:db6f60f762b04cb0@192.168.129.3/keystone
+ 
+ # the timeout before idle sql connections are reaped
+ # idle_timeout = 200
+ idle_timeout = 200
+ 
+ [identity]
+-# driver = keystone.identity.backends.sql.Identity
++driver = keystone.identity.backends.ldap.Identity
+ 
+ # This references the domain to use for all Identity API v2 requests (which are
+ # not aware of domains). A domain with this ID will be created for you by
+ # keystone-manage db_sync in migration 008.  The domain referenced by this ID
+ # cannot be deleted on the v3 API, to prevent accidentally breaking the v2 API.
+ # There is nothing special about this domain, other than the fact that it must
+ # exist to order to maintain support for your v2 clients.
+ # default_domain_id = default
+@@ -284,17 +284,17 @@
+ 
+ [policy]
+ # driver = keystone.policy.backends.sql.Policy
+ 
+ [ec2]
+ # driver = keystone.contrib.ec2.backends.sql.Ec2
+ 
+ [assignment]
+-# driver =
++driver = keystone.assignment.backends.sql.Assignment
+ 
+ # Assignment specific caching toggle. This has no effect unless the global
+ # caching option is set to True
+ # caching = True
+ 
+ # Assignment specific cache time-to-live (TTL) in seconds.
+ # cache_time =
+ 
+@@ -328,18 +328,18 @@
+ #keyfile = /etc/keystone/pki/private/signing_key.pem
+ #ca_certs = /etc/keystone/pki/certs/cacert.pem
+ #ca_key = /etc/keystone/pki/private/cakey.pem
+ #key_size = 2048
+ #valid_days = 3650
+ #cert_subject = /C=US/ST=Unset/L=Unset/O=Unset/CN=www.example.com
+ 
+ [ldap]
+-# url = ldap://localhost
+-# user = dc=Manager,dc=example,dc=com
++url = ldap://ipa.ipa1dom.test
++#user = dc=Manager,dc=example,dc=com
+ # password = None
+ # suffix = cn=example,cn=com
+ # use_dumb_member = False
+ # allow_subtree_delete = False
+ # dumb_member = cn=dumb,dc=example,dc=com
+ 
+ # Maximum results per page; a value of zero ('0') disables paging (default)
+ # page_size = 0
+@@ -348,22 +348,22 @@
+ # 'searching', 'always', 'finding' or 'default'. The 'default' option falls
+ # back to using default dereferencing configured by your ldap.conf.
+ # alias_dereferencing = default
+ 
+ # The LDAP scope for queries, this can be either 'one'
+ # (onelevel/singleLevel) or 'sub' (subtree/wholeSubtree)
+ # query_scope = one
+ 
+-# user_tree_dn = ou=Users,dc=example,dc=com
++user_tree_dn = cn=users,cn=compat,dc=ipa1dom,dc=test
+ # user_filter =
+-# user_objectclass = inetOrgPerson
+-# user_id_attribute = cn
+-# user_name_attribute = sn
+-# user_mail_attribute = email
++user_objectclass = posixAccount
++user_id_attribute = uid
++user_name_attribute = uid
++user_mail_attribute = mail
+ # user_pass_attribute = userPassword
+ # user_enabled_attribute = enabled
+ # user_enabled_mask = 0
+ # user_enabled_default = True
+ # user_attribute_ignore = default_project_id,tenants
+ # user_default_project_id_attribute =
+ # user_allow_create = True
+ # user_allow_update = True

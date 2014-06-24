@@ -93,6 +93,17 @@ gen_virt_mac() {
     # python -c 'from virtinst.util import randomMAC; print randomMAC("qemu")'
 }
 
+get_next_ip_addr() {
+    lastip=`$SUDOCMD virsh net-dumpxml $1 | fgrep "ip='$2"|sed "s/^.*ip='\([^']*\)'.*$/\1/"|sort -V|tail -1`
+    if [ -z "$lastip" ] ; then
+        echo $2.2
+        return 0
+    fi
+    lastnum=`echo $lastip|cut -f4 -d.`
+    echo $2.`expr $lastnum + 1`
+    return 0
+}
+
 # $1 - network name - also used for bridge name
 # $2 - domain name
 # $3 - 3 element IP prefix e.g. 192.168.129
@@ -189,11 +200,14 @@ add_host_info() {
 (
     . $1
     VM_MAC=${VM_MAC:-`gen_virt_mac`}
+    if [ -z "$VM_IP" ] ; then
+        VM_IP=`get_next_ip_addr $VM_NETWORK_NAME $VM_IP_PREFIX`
+    fi
     cat >> $ipxml <<EOF
-      <host mac='$VM_MAC' name='$VM_NAME' ip='$VM_IP_PREFIX.2'/>
+      <host mac='$VM_MAC' name='$VM_NAME' ip='$VM_IP'/>
 EOF
     cat >> $dnsxml <<EOF
-    <host ip='$VM_IP_PREFIX.2'>
+    <host ip='$VM_IP'>
       <hostname>$VM_NAME.$VM_DOMAIN</hostname>
       <hostname>$VM_NAME</hostname>
     </host>
