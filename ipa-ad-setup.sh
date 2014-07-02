@@ -26,7 +26,7 @@ install_packages() {
     # unrar is from rpmfusion
     # sudo yum localinstall -y http://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-stable.noarch.rpm
     # unar is in f20
-    PKGS_REQ=${PKGS_REQ:-"unar qemu-img qemu-kvm libvirt virt-manager libguestfs-tools"}
+    PKGS_REQ=${PKGS_REQ:-"unar qemu-img qemu-kvm libvirt virt-manager libguestfs-tools virt-install"}
     PKGS_TO_INSTALL=${PKGS_TO_INSTALL:-""}
 
     for pkg in $PKGS_REQ ; do
