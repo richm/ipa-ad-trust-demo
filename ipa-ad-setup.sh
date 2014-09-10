@@ -220,7 +220,7 @@ create_virt_network() {
     # each host is in two sections - the ip/dhcp section and the dns section
     VM_NETWORK_NAME=${VM_NETWORK_NAME:-ipaadtest}
     VM_NETWORK_IP=${VM_NETWORK_IP:-192.168.128.1}
-    VM_NETWORK_MASK=${VM_NETWORK_MASK:-255.255.224.0}
+    VM_NETWORK_MASK=${VM_NETWORK_MASK:-255.255.252.0}
     VM_NETWORK_RANGE=${VM_NETWORK_RANGE:-"start='192.168.128.2' end='192.168.128.254'"}
     if $SUDOCMD virsh net-info $VM_NETWORK_NAME > /dev/null 2>&1 ; then
         echo virtual network $VM_NETWORK_NAME already exists
